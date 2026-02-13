@@ -1,78 +1,115 @@
 # Contributing to the Caylent DevContainer Catalog
 
-This guide covers how to add new collections, maintain existing ones, and contribute to the shared common assets.
+This guide covers how to add new collections, maintain existing ones, and contribute to the shared common assets in the `caylent-solutions/caylent-devcontainer-catalog` repository.
 
 ## Table of Contents
 
-- [Adding a New Collection](#adding-a-new-collection)
+- [Prerequisites](#prerequisites)
 - [Collection Naming Conventions](#collection-naming-conventions)
 - [Required Files](#required-files)
+- [File Conflict Rules](#file-conflict-rules)
+- [Adding a New Collection](#adding-a-new-collection)
 - [Validation](#validation)
+  - [Running Validation](#running-validation)
+  - [What Validation Checks](#what-validation-checks)
+  - [Common Validation Errors and Fixes](#common-validation-errors-and-fixes)
+- [Testing](#testing)
+  - [Local Testing Workflow](#local-testing-workflow)
+  - [Verifying the DevContainer Build](#verifying-the-devcontainer-build)
 - [Modifying Common Assets](#modifying-common-assets)
 - [Pull Request Process](#pull-request-process)
-- [Testing](#testing)
+  - [Branch and Merge Strategy](#branch-and-merge-strategy)
+  - [PR Requirements](#pr-requirements)
+  - [Review Checklist](#review-checklist)
 
-## Adding a New Collection
+---
 
-1. Create a directory under `collections/` with a descriptive name:
+## Prerequisites
 
-   ```bash
-   mkdir -p collections/my-collection
-   ```
+Install the Caylent DevContainer CLI before contributing:
 
-2. Create the required files (see [Required Files](#required-files) below).
+```bash
+pip install caylent-devcontainer-cli
+```
 
-3. Validate the catalog:
+Verify the installation:
 
-   ```bash
-   cdevcontainer catalog validate --local .
-   ```
+```bash
+cdevcontainer --version
+```
 
-4. Open a pull request.
+---
 
 ## Collection Naming Conventions
 
-Collection directory names and the `name` field in `catalog-entry.json` must:
+Every collection directory name and the `name` field in its `catalog-entry.json` must follow these rules:
 
-- Be lowercase
-- Use hyphens (`-`) as word separators
-- Be alphanumeric (plus hyphens)
-- Match the directory name exactly
-- Be descriptive of the practice or technology stack
+| Rule | Detail |
+|------|--------|
+| **Pattern** | Must match `^[a-z][a-z0-9-]*[a-z0-9]$` |
+| **Minimum length** | 2 characters |
+| **Allowed characters** | Lowercase letters (`a-z`), digits (`0-9`), and hyphens (`-`) |
+| **Must start with** | A lowercase letter |
+| **Must end with** | A lowercase letter or digit |
+| **Must not start or end with** | A hyphen |
+| **Directory match** | The `name` field in `catalog-entry.json` must match the directory name exactly |
+| **Descriptive** | Should describe the practice area, technology stack, or both |
 
-Examples:
-- `cae-terraform` — CAE practice with Terraform focus
-- `cna-java-spring` — CNA practice with Java Spring Boot
-- `cde-python-data` — CDE practice with Python data engineering tools
-- `solutions-fullstack` — Solutions practice full-stack configuration
+Tags in `catalog-entry.json` follow the same pattern rules as names.
+
+**Examples of valid collection names:**
+
+| Name | Description |
+|------|-------------|
+| `cae-terraform` | CAE practice with Terraform focus |
+| `cna-java-spring` | CNA practice with Java Spring Boot |
+| `cde-python-data` | CDE practice with Python data engineering tools |
+| `solutions-fullstack` | Solutions practice full-stack configuration |
+
+**Examples of invalid collection names:**
+
+| Name | Reason |
+|------|--------|
+| `MyCollection` | Uppercase letters not allowed |
+| `-terraform` | Cannot start with a hyphen |
+| `terraform-` | Cannot end with a hyphen |
+| `a` | Must be at least 2 characters |
+| `cae_terraform` | Underscores not allowed; use hyphens |
+| `cae terraform` | Spaces not allowed |
+
+---
 
 ## Required Files
 
-Every collection must contain these files:
+Every collection directory under `collections/` must contain exactly three files.
 
 ### catalog-entry.json
 
+Metadata describing the collection. Used by the CLI when listing, filtering, and selecting collections.
+
 ```json
 {
-  "name": "my-collection",
-  "description": "A clear description of what this collection provides",
-  "tags": ["practice-name", "language", "framework"],
-  "maintainer": "Your Name or Team",
+  "name": "cna-java-spring",
+  "description": "CNA practice environment with Java 17, Spring Boot 3.x, Gradle, and Kubernetes tooling",
+  "tags": ["cna", "java", "spring-boot", "kubernetes"],
+  "maintainer": "CNA Platform Team",
   "min_cli_version": "2.0.0"
 }
 ```
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `name` | Yes | Must match the directory name |
-| `description` | Yes | Human-readable description shown in catalog list |
-| `tags` | No | Array of strings for filtering (`cdevcontainer catalog list --tags`) |
-| `maintainer` | No | Person or team responsible for this collection |
-| `min_cli_version` | No | Minimum CLI version that supports this collection |
+| `name` | **Yes** | Must match the collection directory name exactly. Must follow the naming pattern. |
+| `description` | **Yes** | Human-readable description displayed when users browse the catalog. |
+| `tags` | No | Array of strings for filtering with `cdevcontainer catalog list --tags`. Each tag must follow the same naming pattern as collection names. |
+| `maintainer` | No | Person or team responsible for maintaining this collection. |
+| `min_cli_version` | No | Minimum CLI version required to use this collection (semver string). |
 
 ### devcontainer.json
 
-The devcontainer configuration. Must include a `postCreateCommand` that invokes the shared postcreate script:
+The devcontainer configuration file. This file defines the container image, features, extensions, settings, and lifecycle commands for the development environment.
+
+The `postCreateCommand` field is required and must reference the shared postcreate script:
 
 ```json
 {
@@ -80,115 +117,286 @@ The devcontainer configuration. Must include a `postCreateCommand` that invokes 
 }
 ```
 
+The exact command can vary (for example, it may include logging or WSL handling), but it must contain a reference to `.devcontainer/.devcontainer.postcreate.sh`. Validation checks for this reference.
+
 ### VERSION
 
-A file containing a semver version string (e.g., `1.0.0`). Increment this when making changes to the collection:
+A plain text file containing a single semver version string:
 
-- **Patch** (`1.0.1`): Bug fixes, minor config tweaks
-- **Minor** (`1.1.0`): New features, added tools
-- **Major** (`2.0.0`): Breaking changes to the collection
+```
+1.0.0
+```
+
+Follow semantic versioning when updating:
+
+| Change Type | Version Bump | Examples |
+|-------------|--------------|----------|
+| Bug fixes, minor config tweaks | Patch (`1.0.0` -> `1.0.1`) | Fix a typo in settings, adjust a port number |
+| New features, added tools | Minor (`1.0.0` -> `1.1.0`) | Add a new VS Code extension, add a devcontainer feature |
+| Breaking changes | Major (`1.0.0` -> `2.0.0`) | Change the base image, remove a tool, restructure the collection |
+
+---
 
 ## File Conflict Rules
 
-Collections must **not** contain files with the same name as common assets:
+Collections must **not** contain files with the same names as the common assets. The following filenames are reserved:
 
 - `.devcontainer.postcreate.sh`
 - `devcontainer-functions.sh`
 - `project-setup.sh`
 
-If a collection contains these files, the common assets version will take precedence during copy. Validation will warn about conflicts.
+These files live in `common/devcontainer-assets/` and are copied into every project **after** collection files during setup. If a collection contains a file with one of these names, the common asset version will overwrite it. Validation flags this as a conflict.
+
+If your collection needs custom behavior provided by these scripts, contribute the changes to the common assets instead (see [Modifying Common Assets](#modifying-common-assets)).
+
+---
+
+## Adding a New Collection
+
+1. Create a directory under `collections/` with a name that follows the [naming conventions](#collection-naming-conventions):
+
+   ```bash
+   mkdir -p collections/cna-java-spring
+   ```
+
+2. Create the three required files:
+
+   ```bash
+   # catalog-entry.json
+   cat > collections/cna-java-spring/catalog-entry.json << 'EOF'
+   {
+     "name": "cna-java-spring",
+     "description": "CNA practice environment with Java 17, Spring Boot 3.x, Gradle, and Kubernetes tooling",
+     "tags": ["cna", "java", "spring-boot"],
+     "maintainer": "CNA Platform Team",
+     "min_cli_version": "2.0.0"
+   }
+   EOF
+
+   # VERSION
+   echo "1.0.0" > collections/cna-java-spring/VERSION
+
+   # devcontainer.json (customize features and extensions for your stack)
+   cat > collections/cna-java-spring/devcontainer.json << 'EOF'
+   {
+     "name": "cna-java-spring",
+     "image": "mcr.microsoft.com/devcontainers/java:17",
+     "features": {
+       "ghcr.io/devcontainers/features/aws-cli:1": { "version": "latest" }
+     },
+     "postCreateCommand": "bash .devcontainer/.devcontainer.postcreate.sh ${localEnv:USER:vscode}"
+   }
+   EOF
+   ```
+
+3. Add any additional collection-specific files (proxy configurations, example files, etc.) to the same directory. Do not add files that conflict with common assets.
+
+4. Validate the catalog:
+
+   ```bash
+   cdevcontainer catalog validate --local .
+   ```
+
+5. Test the collection locally (see [Testing](#testing)).
+
+6. Open a pull request (see [Pull Request Process](#pull-request-process)).
+
+---
 
 ## Validation
 
-Before submitting a PR, validate the catalog structure:
+### Running Validation
+
+From the root of the catalog repository:
 
 ```bash
-# Install the CLI if not already installed
-pip install caylent-devcontainer-cli
-
-# Validate the catalog
 cdevcontainer catalog validate --local .
 ```
 
-Validation checks:
-- `common/devcontainer-assets/` exists with all required files
-- Each collection has `catalog-entry.json`, `devcontainer.json`, and `VERSION`
-- `catalog-entry.json` contains required fields (`name`, `description`)
-- `name` in `catalog-entry.json` matches the directory name
-- No duplicate collection names across the catalog
-- `devcontainer.json` has a valid `postCreateCommand` referencing the postcreate script
-- No file conflicts between collections and common assets
+Run this command before every commit and before opening a pull request. The command exits with a non-zero status if any checks fail.
 
-## Modifying Common Assets
+### What Validation Checks
 
-Common assets in `common/devcontainer-assets/` affect **all collections** in this catalog. Changes should be made carefully:
+The validation command performs the following checks:
 
-1. **`.devcontainer.postcreate.sh`** — The main setup script. Handles environment setup, tool installation, AWS configuration, git authentication. Modify this to change what happens for all collections during container creation.
+**Common asset checks:**
+- `common/devcontainer-assets/` directory exists
+- All three required common asset files are present:
+  - `.devcontainer.postcreate.sh`
+  - `devcontainer-functions.sh`
+  - `project-setup.sh`
 
-2. **`devcontainer-functions.sh`** — Shared bash functions. Add new utility functions here that can be used by the postcreate script or project-setup.sh.
+**Per-collection checks:**
+- `catalog-entry.json` exists in the collection directory
+- `devcontainer.json` exists in the collection directory
+- `VERSION` exists in the collection directory
+- `catalog-entry.json` contains the required `name` field
+- `catalog-entry.json` contains the required `description` field
+- The `name` field matches the collection directory name
+- The `name` field matches the naming pattern (`^[a-z][a-z0-9-]*[a-z0-9]$`, minimum 2 characters)
+- All `tags` values match the naming pattern
+- No duplicate collection names across all collections in the catalog
+- `devcontainer.json` contains a `postCreateCommand` that references `.devcontainer/.devcontainer.postcreate.sh`
+- No file name conflicts between collection files and common assets
 
-3. **`project-setup.sh`** — The template that developers customize. Keep this minimal — it should provide examples and structure but not impose project-specific logic.
+### Common Validation Errors and Fixes
 
-When modifying common assets:
-- Test changes against at least one collection
-- Document the change in the PR description
-- Consider backward compatibility with existing projects using this catalog
+| Error | Cause | Fix |
+|-------|-------|-----|
+| Missing required common asset: `<file>` | A file is missing from `common/devcontainer-assets/` | Add the missing file to `common/devcontainer-assets/` |
+| Missing required file: `catalog-entry.json` | Collection directory lacks its metadata file | Create `catalog-entry.json` in the collection directory with `name` and `description` fields |
+| Missing required file: `devcontainer.json` | Collection directory lacks its devcontainer configuration | Create `devcontainer.json` in the collection directory with a valid `postCreateCommand` |
+| Missing required file: `VERSION` | Collection directory lacks its version file | Create a `VERSION` file containing a semver string (e.g., `1.0.0`) |
+| Missing required field: `name` | `catalog-entry.json` does not include `name` | Add a `name` field that matches the directory name |
+| Missing required field: `description` | `catalog-entry.json` does not include `description` | Add a `description` field with a human-readable description |
+| Name does not match directory | `name` in `catalog-entry.json` differs from the directory name | Change the `name` field to match the directory name exactly |
+| Name does not match pattern | `name` or `tag` contains invalid characters | Use only lowercase letters, digits, and hyphens. Must start with a letter, end with a letter or digit, minimum 2 characters. |
+| Duplicate collection name: `<name>` | Two or more collections share the same `name` | Change the `name` field (and directory) of one collection to be unique |
+| postCreateCommand does not reference postcreate script | `devcontainer.json` is missing the postcreate reference | Add or update `postCreateCommand` to include `bash .devcontainer/.devcontainer.postcreate.sh` |
+| File conflict with common asset: `<file>` | Collection contains a file that shares a name with a common asset | Remove the conflicting file from the collection. Contribute needed changes to `common/devcontainer-assets/` instead. |
 
-## Pull Request Process
-
-1. **Branch**: Create a feature branch from `main`
-2. **Changes**: Make your changes (new collection, common asset update, etc.)
-3. **Validate**: Run `cdevcontainer catalog validate --local .`
-4. **PR**: Open a pull request with:
-   - Description of what changed and why
-   - For new collections: what practice/team this serves, what tools are included
-   - For common asset changes: impact assessment on existing collections
-5. **Review**: At least 1 approving review required
-6. **Merge**: Squash merge only
-
-### PR Checklist
-
-- [ ] `cdevcontainer catalog validate --local .` passes
-- [ ] Collection `name` matches directory name
-- [ ] `catalog-entry.json` has meaningful `description` and `tags`
-- [ ] `devcontainer.json` references the shared postcreate script
-- [ ] `VERSION` file is present and contains a valid semver string
-- [ ] No file conflicts with common assets
-- [ ] PR description explains the purpose and impact
+---
 
 ## Testing
 
-### Local Testing
+### Local Testing Workflow
 
-To test a collection locally before pushing:
+1. **Clone the repository:**
 
-```bash
-# 1. Clone this repo
-git clone https://github.com/caylent-solutions/caylent-devcontainer-catalog.git
-cd caylent-devcontainer-catalog
+   ```bash
+   git clone https://github.com/caylent-solutions/caylent-devcontainer-catalog.git
+   cd caylent-devcontainer-catalog
+   ```
 
-# 2. Validate structure
-cdevcontainer catalog validate --local .
+2. **Run validation:**
 
-# 3. Test with a project
-mkdir -p /tmp/test-project
-DEVCONTAINER_CATALOG_URL="/path/to/caylent-devcontainer-catalog" \
-  cdevcontainer setup-devcontainer /tmp/test-project
+   ```bash
+   cdevcontainer catalog validate --local .
+   ```
 
-# 4. Verify the devcontainer builds and works
-cd /tmp/test-project
-code .
-# Accept "Reopen in Container" prompt
-```
+   Fix any errors before proceeding.
 
-### Validation Errors
+3. **Test the collection with a project:**
 
-Common validation errors and fixes:
+   Point `DEVCONTAINER_CATALOG_URL` at your local clone and run the setup command against a test project:
 
-| Error | Fix |
-|-------|-----|
-| `Missing required common asset: <file>` | Add the missing file to `common/devcontainer-assets/` |
-| `Missing required file: catalog-entry.json` | Create `catalog-entry.json` in your collection directory |
-| `Missing required field: name` | Add the `name` field to `catalog-entry.json` |
-| `Duplicate collection name: <name>` | Change the `name` field to be unique across all collections |
-| `postCreateCommand does not reference postcreate script` | Update `devcontainer.json` to include the postcreate command |
+   ```bash
+   mkdir -p /tmp/test-project
+   DEVCONTAINER_CATALOG_URL="/absolute/path/to/caylent-devcontainer-catalog" \
+     cdevcontainer setup-devcontainer --catalog-entry <your-collection-name> /tmp/test-project
+   ```
+
+   Verify that the expected files are copied into `/tmp/test-project/.devcontainer/`.
+
+4. **Verify the devcontainer builds:**
+
+   Open the test project in VS Code and accept the "Reopen in Container" prompt, or build from the command line:
+
+   ```bash
+   cd /tmp/test-project
+   devcontainer build --workspace-folder .
+   ```
+
+   Confirm that:
+   - The container builds without errors
+   - The `postCreateCommand` runs successfully
+   - Tools and extensions specified in `devcontainer.json` are available
+   - The development environment is functional for the intended workflow
+
+### Verifying the DevContainer Build
+
+When testing, check the following:
+
+- Container starts without errors
+- The postcreate script completes (check `/tmp/devcontainer-setup.log` inside the container)
+- Language runtimes and tools are installed at expected versions
+- VS Code extensions load correctly
+- Port forwarding works for any specified ports
+- Project-specific tooling (linters, formatters, build tools) is functional
+
+---
+
+## Modifying Common Assets
+
+Files in `common/devcontainer-assets/` are shared across **all** collections in this catalog. Changes to these files affect every collection and every project that uses this catalog.
+
+The three common asset files are:
+
+| File | Purpose |
+|------|---------|
+| `.devcontainer.postcreate.sh` | Main setup script executed during container creation. Handles environment setup, tool installation, AWS configuration, git authentication, and more. |
+| `devcontainer-functions.sh` | Shared bash functions (logging, WSL compatibility, proxy validation, git configuration) used by the postcreate script and project-setup.sh. |
+| `project-setup.sh` | Template for project-specific setup. Developers customize this file after initial setup to add project-level initialization commands. |
+
+**Guidelines for common asset changes:**
+
+1. **Test against at least one collection** before opening a PR. Set up a test project using an existing collection and verify the postcreate script runs correctly with your changes.
+
+2. **Document changes in the PR description.** Explain what changed, why, and what the impact is on existing collections and projects.
+
+3. **Consider backward compatibility.** Existing projects that already use this catalog will pick up common asset changes on their next `setup-devcontainer` run. Avoid breaking changes to function signatures, expected environment variables, or script behavior without a migration path.
+
+4. **Do not add collection-specific logic to common assets.** Common assets must remain general-purpose. If logic applies to only one collection, it belongs in that collection's files or in `project-setup.sh` customization.
+
+---
+
+## Pull Request Process
+
+### Branch and Merge Strategy
+
+| Item | Requirement |
+|------|-------------|
+| **Base branch** | `main` |
+| **Branch naming** | Feature branch from `main` (e.g., `add-cna-java-spring`, `fix-postcreate-logging`) |
+| **Required approvals** | 1 approving review |
+| **Merge method** | Squash merge only |
+
+### PR Requirements
+
+Every pull request must include:
+
+1. **Description** -- What changed and why. For new collections, describe what practice or team this serves and what tools are included.
+
+2. **Impact assessment** (for common asset changes) -- Describe how the change affects existing collections. List which collections were tested.
+
+3. **Validation confirmation** -- State that `cdevcontainer catalog validate --local .` passes. Include the output if helpful.
+
+### Review Checklist
+
+Reviewers and contributors should verify every item before approving or merging a pull request.
+
+**Validation:**
+
+- [ ] `cdevcontainer catalog validate --local .` passes with no errors
+
+**Collection structure (for new or modified collections):**
+
+- [ ] Collection directory name follows the naming pattern (`^[a-z][a-z0-9-]*[a-z0-9]$`, minimum 2 characters)
+- [ ] `catalog-entry.json` exists with required `name` and `description` fields
+- [ ] `name` in `catalog-entry.json` matches the directory name exactly
+- [ ] `description` is meaningful and clearly describes the collection's purpose
+- [ ] `tags` (if present) follow the naming pattern and are relevant to the collection
+- [ ] `devcontainer.json` exists and contains a valid `postCreateCommand` referencing `.devcontainer/.devcontainer.postcreate.sh`
+- [ ] `VERSION` file exists and contains a valid semver string
+- [ ] No files conflict with common asset names (`.devcontainer.postcreate.sh`, `devcontainer-functions.sh`, `project-setup.sh`)
+- [ ] No duplicate collection name in the catalog
+
+**Quality:**
+
+- [ ] `devcontainer.json` uses pinned or well-defined versions for features where appropriate
+- [ ] Extensions listed in `devcontainer.json` are relevant to the collection's technology stack
+- [ ] Collection does not include credentials, secrets, or environment-specific values
+- [ ] VERSION has been incremented if this is a change to an existing collection
+
+**Common asset changes (if applicable):**
+
+- [ ] Change has been tested against at least one existing collection
+- [ ] PR description includes an impact assessment
+- [ ] Backward compatibility has been considered and documented
+- [ ] No collection-specific logic has been added to common assets
+
+**PR hygiene:**
+
+- [ ] PR description explains the purpose and scope of changes
+- [ ] Squash merge is selected (not merge commit or rebase)
+- [ ] Only files relevant to the change are included
