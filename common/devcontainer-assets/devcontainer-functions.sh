@@ -29,6 +29,50 @@ exit_with_error() {
   exit 1
 }
 
+configure_apt_proxy() {
+  # Configure apt to use proxy from environment variables.
+  # Writes /etc/apt/apt.conf.d/99proxy if HTTP_PROXY or http_proxy is set.
+  # Adds per-host DIRECT overrides from NO_PROXY because apt ignores that
+  # environment variable and requires Acquire::http::Proxy::host "DIRECT" syntax.
+  local apt_proxy_conf="/etc/apt/apt.conf.d/99proxy"
+  local proxy_url="${HTTP_PROXY:-${http_proxy:-}}"
+
+  if [ -z "${proxy_url}" ]; then
+    log_info "No proxy configured for apt (HTTP_PROXY not set)"
+    return 0
+  fi
+
+  local https_proxy_url="${HTTPS_PROXY:-${https_proxy:-${proxy_url}}}"
+
+  log_info "Configuring apt proxy: http=${proxy_url} https=${https_proxy_url}"
+
+  cat > "${apt_proxy_conf}" <<APT_PROXY_EOF
+Acquire::http::Proxy "${proxy_url}";
+Acquire::https::Proxy "${https_proxy_url}";
+APT_PROXY_EOF
+
+  # apt ignores NO_PROXY — add per-host DIRECT overrides for domain entries
+  local no_proxy_val="${NO_PROXY:-${no_proxy:-}}"
+  if [ -n "${no_proxy_val}" ]; then
+    local _old_ifs="${IFS}"
+    IFS=','
+    for _entry in ${no_proxy_val}; do
+      IFS="${_old_ifs}"
+      _entry=$(echo "${_entry}" | tr -d ' ')
+      # Add DIRECT for FQDN entries (start with letter, contain a dot)
+      case "${_entry}" in
+        [a-zA-Z]*.*)
+          echo "Acquire::http::Proxy::${_entry} \"DIRECT\";" >> "${apt_proxy_conf}"
+          echo "Acquire::https::Proxy::${_entry} \"DIRECT\";" >> "${apt_proxy_conf}"
+          ;;
+      esac
+    done
+    IFS="${_old_ifs}"
+  fi
+
+  log_success "Wrote apt proxy configuration to ${apt_proxy_conf}"
+}
+
 asdf_plugin_installed() {
   asdf plugin list | grep -q "^$1$"
 }
@@ -40,7 +84,7 @@ install_asdf_plugin() {
   else
     log_info "Installing asdf plugin: ${plugin}"
     if ! asdf plugin add "${plugin}"; then
-      log_warn "Failed to add asdf plugin: ${plugin}"
+      log_warn "❌ Failed to add asdf plugin: ${plugin}"
       return 1
     fi
   fi
@@ -106,14 +150,14 @@ parse_proxy_host_port() {
   host_port="${host_port%%/*}"
 
   if [[ "$host_port" != *:* ]]; then
-    exit_with_error "HOST_PROXY_URL '${proxy_url}' does not contain a port (expected format: http://host:port)"
+    exit_with_error "❌ HOST_PROXY_URL '${proxy_url}' does not contain a port (expected format: http://host:port)"
   fi
 
   PROXY_PARSED_HOST="${host_port%:*}"
   PROXY_PARSED_PORT="${host_port##*:}"
 
   if [ -z "$PROXY_PARSED_HOST" ] || [ -z "$PROXY_PARSED_PORT" ]; then
-    exit_with_error "Failed to parse host/port from HOST_PROXY_URL '${proxy_url}'"
+    exit_with_error "❌ Failed to parse host/port from HOST_PROXY_URL '${proxy_url}'"
   fi
 }
 
@@ -136,7 +180,7 @@ validate_host_proxy() {
     elapsed=$((elapsed + 1))
   done
 
-  exit_with_error "Host proxy not reachable at ${proxy_host}:${proxy_port} after ${timeout}s. See ${readme_ref} for troubleshooting."
+  exit_with_error "❌ Host proxy not reachable at ${proxy_host}:${proxy_port} after ${timeout}s. See ${readme_ref} for troubleshooting."
 }
 
 configure_git_shared() {
@@ -219,7 +263,7 @@ configure_git_ssh() {
 
   # Copy SSH private key
   if [ ! -f "${ssh_key_source}" ]; then
-    exit_with_error "SSH private key not found at ${ssh_key_source}. Ensure ssh-private-key exists in .devcontainer/"
+    exit_with_error "❌ SSH private key not found at ${ssh_key_source}. Ensure ssh-private-key exists in .devcontainer/"
   fi
   cp "${ssh_key_source}" "${ssh_key_dest}"
   chmod 600 "${ssh_key_dest}"
@@ -227,7 +271,7 @@ configure_git_ssh() {
   # Run ssh-keyscan to add host to known_hosts
   log_info "Running ssh-keyscan for ${git_provider_url}..."
   if ! ssh-keyscan "${git_provider_url}" >> "${ssh_dir}/known_hosts" 2>/dev/null; then
-    exit_with_error "ssh-keyscan failed for ${git_provider_url}"
+    exit_with_error "❌ ssh-keyscan failed for ${git_provider_url}"
   fi
   chmod 600 "${ssh_dir}/known_hosts"
 
@@ -252,7 +296,7 @@ EOF
   ssh_output=$(sudo -u "${container_user}" ssh -T "git@${git_provider_url}" -o BatchMode=yes -o StrictHostKeyChecking=no 2>&1 || true)
 
   if echo "${ssh_output}" | grep -qi "permission denied\|publickey.*denied"; then
-    exit_with_error "SSH connectivity test failed for git@${git_provider_url}: ${ssh_output}"
+    exit_with_error "❌ SSH connectivity test failed for git@${git_provider_url}: ${ssh_output}"
   fi
   log_info "SSH connectivity response: ${ssh_output}"
 

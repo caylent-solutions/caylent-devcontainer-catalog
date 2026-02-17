@@ -38,7 +38,7 @@ export PATH="/usr/local/py-utils/bin:/usr/local/python/current/bin:$HOME/.local/
 # Require Critical Envs #
 #########################
 if [ -z "${DEFAULT_GIT_BRANCH:-}" ]; then
-  exit_with_error "DEFAULT_GIT_BRANCH is not set in the environment"
+  exit_with_error "❌ DEFAULT_GIT_BRANCH is not set in the environment"
 fi
 
 if [ "$CICD_VALUE" != "true" ]; then
@@ -47,14 +47,14 @@ if [ "$CICD_VALUE" != "true" ]; then
 
   if [ "${AWS_CONFIG_ENABLED,,}" = "true" ]; then
     if [ ! -f "$AWS_PROFILE_MAP_FILE" ]; then
-      exit_with_error "Missing AWS profile config: $AWS_PROFILE_MAP_FILE (required when AWS_CONFIG_ENABLED=true)"
+      exit_with_error "❌ Missing AWS profile config: $AWS_PROFILE_MAP_FILE (required when AWS_CONFIG_ENABLED=true)"
     fi
 
     AWS_PROFILE_MAP_JSON=$(<"$AWS_PROFILE_MAP_FILE")
 
     if ! jq empty <<< "$AWS_PROFILE_MAP_JSON" >/dev/null 2>&1; then
       log_error "$AWS_PROFILE_MAP_JSON"
-      exit_with_error "AWS_PROFILE_MAP_JSON is not valid JSON"
+      exit_with_error "❌ AWS_PROFILE_MAP_JSON is not valid JSON"
     fi
   else
     log_info "AWS configuration disabled (AWS_CONFIG_ENABLED=${AWS_CONFIG_ENABLED})"
@@ -73,7 +73,7 @@ log_info "Configuring shell.env sourcing for all shells"
 
 # Verify shell.env exists before configuring shells
 if [ ! -f "${WORK_DIR}/shell.env" ]; then
-  exit_with_error "shell.env not found at ${WORK_DIR}/shell.env"
+  exit_with_error "❌ shell.env not found at ${WORK_DIR}/shell.env"
 fi
 
 # For bash: source in .bashrc (interactive) and via BASH_ENV (non-interactive)
@@ -95,7 +95,9 @@ echo "alias pip=pip3" >> /home/${CONTAINER_USER}/.zshenv
 ##############################
 log_info "Installing asdf..."
 mkdir -p /home/${CONTAINER_USER}/.asdf
-git clone https://github.com/asdf-vm/asdf.git /home/${CONTAINER_USER}/.asdf --branch v0.15.0
+if ! git clone https://github.com/asdf-vm/asdf.git /home/${CONTAINER_USER}/.asdf --branch v0.15.0; then
+  exit_with_error "Failed to clone asdf repository — check network connectivity and proxy settings"
+fi
 
 # Source asdf for the current script
 export ASDF_DIR="/home/${CONTAINER_USER}/.asdf"
@@ -174,7 +176,18 @@ fi
 #################
 if [ ! -d "/home/${CONTAINER_USER}/.oh-my-zsh" ]; then
   log_info "Installing Oh My Zsh..."
-  sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+  OMZ_INSTALL_SCRIPT="/tmp/ohmyzsh-install-${RANDOM}.sh"
+  if ! curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh -o "${OMZ_INSTALL_SCRIPT}"; then
+    exit_with_error "Failed to download Oh My Zsh install script — check network connectivity and proxy settings"
+  fi
+  if [ ! -s "${OMZ_INSTALL_SCRIPT}" ]; then
+    exit_with_error "Oh My Zsh install script is empty or missing at ${OMZ_INSTALL_SCRIPT}"
+  fi
+  if ! sh "${OMZ_INSTALL_SCRIPT}" --unattended; then
+    rm -f "${OMZ_INSTALL_SCRIPT}"
+    exit_with_error "Oh My Zsh installation failed"
+  fi
+  rm -f "${OMZ_INSTALL_SCRIPT}"
 else
   log_info "Oh My Zsh already installed — skipping"
 fi
@@ -220,35 +233,41 @@ fi
 # Install Base Tools
 #####################
 log_info "Installing core packages..."
-sudo apt-get update -qq
-sudo apt-get install -y -qq curl vim git gh jq yq nmap sipcalc wget unzip zip netcat-openbsd bc
+log_info "Proxy environment: HTTP_PROXY=${HTTP_PROXY:-unset} http_proxy=${http_proxy:-unset}"
+if ! sudo apt-get update -qq; then
+  exit_with_error "apt-get update failed. Check proxy settings and network connectivity. HTTP_PROXY=${HTTP_PROXY:-unset}"
+fi
+if ! sudo apt-get install -y -qq curl vim-tiny git gh nmap sipcalc wget unzip zip netcat-openbsd bc; then
+  exit_with_error "apt-get install failed for core packages"
+fi
 
 ##############################
 # Install Optional Extra Tools
 ##############################
 if [ -n "${EXTRA_APT_PACKAGES:-}" ]; then
   log_info "Installing extra packages: ${EXTRA_APT_PACKAGES}"
-  sudo apt-get install -y ${EXTRA_APT_PACKAGES}
+  if ! sudo apt-get install -y ${EXTRA_APT_PACKAGES}; then
+    exit_with_error "apt-get install failed for extra packages: ${EXTRA_APT_PACKAGES}"
+  fi
 fi
 
-if [ -f "${WORK_DIR}/.tool-versions" ]; then
+if [ -f "${WORK_DIR}/.tool-versions" ] && grep -qE '^[a-zA-Z]' "${WORK_DIR}/.tool-versions"; then
   log_info "Installing asdf plugins from .tool-versions..."
-  cut -d' ' -f1 "${WORK_DIR}/.tool-versions" | while read -r plugin; do
+  grep -E '^[a-zA-Z]' "${WORK_DIR}/.tool-versions" | cut -d' ' -f1 | while read -r plugin; do
     install_asdf_plugin "$plugin"
   done
 
   log_info "Installing tools from .tool-versions..."
   if ! asdf install; then
-    log_warn "asdf install failed — tool versions may not be fully installed"
+    log_warn "❌ asdf install failed — tool versions may not be fully installed"
+  fi
+
+  log_info "Running asdf reshim..."
+  if ! asdf reshim; then
+    exit_with_error "❌ asdf reshim failed"
   fi
 else
-  log_info "No .tool-versions file found — skipping general asdf install"
-fi
-
-# Ensure reshim is run for the current user
-log_info "Running asdf reshim..."
-if ! asdf reshim; then
-  exit_with_error "asdf reshim failed"
+  log_info "No .tool-versions file found (or file is empty) — skipping asdf install"
 fi
 
 # Create symlinks in /usr/local/bin for direct access by AI agents
@@ -287,10 +306,14 @@ fi
 
 install_with_pipx "${CLI_INSTALL_CMD}"
 
-# Verify asdf is working properly
-log_info "Verifying asdf installation..."
-if ! asdf current; then
-  exit_with_error "asdf current failed - installation may be incomplete"
+# Verify asdf is working properly (only if tools were configured)
+if [ -f "${WORK_DIR}/.tool-versions" ] && grep -qE '^[a-zA-Z]' "${WORK_DIR}/.tool-versions"; then
+  log_info "Verifying asdf installation..."
+  if ! asdf current; then
+    exit_with_error "❌ asdf current failed - installation may be incomplete"
+  fi
+else
+  log_info "No asdf tools configured — skipping verification"
 fi
 
 ##############
@@ -301,7 +324,7 @@ fi
 
 if [ "${HOST_PROXY:-false}" = "true" ]; then
   if [ -z "${HOST_PROXY_URL:-}" ]; then
-    exit_with_error "HOST_PROXY=true but HOST_PROXY_URL is not set. Set HOST_PROXY_URL in shell.env (e.g., http://host.docker.internal:3128)"
+    exit_with_error "❌ HOST_PROXY=true but HOST_PROXY_URL is not set. Set HOST_PROXY_URL in shell.env (e.g., http://host.docker.internal:3128)"
   fi
 
   parse_proxy_host_port "${HOST_PROXY_URL}"
@@ -330,12 +353,12 @@ log_info "Installing Claude Code CLI..."
 CLAUDE_INSTALL_SCRIPT="/tmp/claude-install-${RANDOM}.sh"
 
 if ! sudo -u "${CONTAINER_USER}" curl -fsSL https://claude.ai/install.sh -o "${CLAUDE_INSTALL_SCRIPT}"; then
-  exit_with_error "Failed to download Claude Code install script from https://claude.ai/install.sh - check network connectivity and proxy settings"
+  exit_with_error "❌ Failed to download Claude Code install script from https://claude.ai/install.sh - check network connectivity and proxy settings"
 fi
 
 # Verify script was downloaded and is not empty
 if [ ! -s "${CLAUDE_INSTALL_SCRIPT}" ]; then
-  exit_with_error "Claude Code install script is empty or missing at ${CLAUDE_INSTALL_SCRIPT}"
+  exit_with_error "❌ Claude Code install script is empty or missing at ${CLAUDE_INSTALL_SCRIPT}"
 fi
 
 # Execute install script
@@ -344,13 +367,13 @@ if uname -r | grep -i microsoft > /dev/null; then
   # WSL compatibility: Run directly without sudo -u
   if ! PATH="/home/${CONTAINER_USER}/.local/bin:$PATH" bash "${CLAUDE_INSTALL_SCRIPT}"; then
     rm -f "${CLAUDE_INSTALL_SCRIPT}"
-    exit_with_error "Failed to execute Claude Code install script"
+    exit_with_error "❌ Failed to execute Claude Code install script"
   fi
 else
   # Non-WSL: Install as container user
   if ! sudo -u "${CONTAINER_USER}" PATH="/home/${CONTAINER_USER}/.local/bin:$PATH" bash "${CLAUDE_INSTALL_SCRIPT}"; then
     rm -f "${CLAUDE_INSTALL_SCRIPT}"
-    exit_with_error "Failed to execute Claude Code install script"
+    exit_with_error "❌ Failed to execute Claude Code install script"
   fi
 fi
 
@@ -360,11 +383,11 @@ rm -f "${CLAUDE_INSTALL_SCRIPT}"
 log_info "Verifying Claude Code CLI installation..."
 CLAUDE_BIN="/home/${CONTAINER_USER}/.local/bin/claude"
 if [ ! -f "$CLAUDE_BIN" ]; then
-  exit_with_error "Claude Code binary not found at expected location: $CLAUDE_BIN"
+  exit_with_error "❌ Claude Code binary not found at expected location: $CLAUDE_BIN"
 fi
 
 if [ ! -x "$CLAUDE_BIN" ]; then
-  exit_with_error "Claude Code binary exists but is not executable: $CLAUDE_BIN"
+  exit_with_error "❌ Claude Code binary exists but is not executable: $CLAUDE_BIN"
 fi
 
 CLAUDE_VERSION=$(sudo -u "${CONTAINER_USER}" "${CLAUDE_BIN}" --version 2>&1 || echo "unknown")
@@ -377,7 +400,7 @@ if [ "$CICD_VALUE" != "true" ]; then
   log_info "Setting up Git credentials..."
 
   if [ -z "${GIT_AUTH_METHOD:-}" ]; then
-    exit_with_error "GIT_AUTH_METHOD is required. Please regenerate project files."
+    exit_with_error "❌ GIT_AUTH_METHOD is required. Please regenerate project files."
   fi
 
   # Shared git config (both methods)
@@ -391,7 +414,7 @@ if [ "$CICD_VALUE" != "true" ]; then
       configure_git_ssh "${CONTAINER_USER}" "${GIT_PROVIDER_URL}" "${WORK_DIR}"
       ;;
     *)
-      exit_with_error "Invalid GIT_AUTH_METHOD: '${GIT_AUTH_METHOD}'. Must be 'token' or 'ssh'."
+      exit_with_error "❌ Invalid GIT_AUTH_METHOD: '${GIT_AUTH_METHOD}'. Must be 'token' or 'ssh'."
       ;;
   esac
 else
@@ -408,7 +431,7 @@ chown -R ${CONTAINER_USER}:${CONTAINER_USER} /home/${CONTAINER_USER}
 # Warning Summary  #
 ####################
 if [ ${#WARNINGS[@]} -ne 0 ]; then
-  echo -e "\n Warning: Completed with warnings:"
+  echo -e "\n⚠️  Completed with warnings:"
   for warning in "${WARNINGS[@]}"; do
     echo "  - $warning"
   done
@@ -430,6 +453,7 @@ if [ -f "${WORK_DIR}/.devcontainer/project-setup.sh" ]; then
   fi
 else
   log_warn "No project-specific setup script found at ${WORK_DIR}/.devcontainer/project-setup.sh"
+  WARNINGS+=("No project-specific setup script found at ${WORK_DIR}/.devcontainer/project-setup.sh")
 fi
 
 exit 0
