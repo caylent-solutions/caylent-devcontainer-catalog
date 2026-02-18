@@ -499,7 +499,12 @@ cdevcontainer catalog validate
 | Directory exists | `common/devcontainer-assets/` must exist |
 | `.devcontainer.postcreate.sh` present | Required common asset |
 | `devcontainer-functions.sh` present | Required common asset |
+| `postcreate-wrapper.sh` present | Required common asset |
 | `project-setup.sh` present | Required common asset |
+| Subdirectories exist | `nix-family-os/` and `wsl-family-os/` must exist in common assets |
+| Subdirectory files present | Each subdirectory must contain `README.md`, `tinyproxy.conf.template`, `tinyproxy-daemon.sh` |
+| Scripts executable | Shell scripts (`.devcontainer.postcreate.sh`, `devcontainer-functions.sh`, `postcreate-wrapper.sh`, `project-setup.sh`, `tinyproxy-daemon.sh`) must have executable permission |
+| Root assets JSON valid | All `.json` files in `common/root-project-assets/` (if present) must be valid JSON |
 
 **Per-entry validation:**
 
@@ -508,16 +513,20 @@ cdevcontainer catalog validate
 | `catalog-entry.json` exists | Required file in every entry |
 | `devcontainer.json` exists | Required file in every entry |
 | `VERSION` exists | Required file in every entry |
+| `VERSION` content valid | Must contain valid semver `X.Y.Z` |
 | `name` field present | `catalog-entry.json` must have a non-empty `name` string |
 | `description` field present | `catalog-entry.json` must have a non-empty `description` string |
 | `name` matches pattern | Must match `^[a-z][a-z0-9-]*[a-z0-9]$` (min 2 chars, lowercase, alphanumeric + hyphens) |
 | `name` matches directory | The `name` field value must equal the entry's directory name |
+| No unknown fields | `catalog-entry.json` must only contain known fields (`name`, `description`, `tags`, `maintainer`, `min_cli_version`) |
 | Tags match pattern | Each tag in `tags` array must match `^[a-z][a-z0-9-]*[a-z0-9]$` |
 | `min_cli_version` format | If present, must be valid semver `X.Y.Z` |
 | `maintainer` format | If present, must be a non-empty string |
 | No duplicate names | No two entries may have the same `name` |
+| `devcontainer.json` has `name` | Must contain a non-empty `name` field |
+| Container source present | `devcontainer.json` must have at least one of: `image`, `build`, `dockerFile`, `dockerComposeFile` |
 | `postCreateCommand` valid | Must reference `.devcontainer/.devcontainer.postcreate.sh` |
-| No file conflicts | Entry must not contain files named `.devcontainer.postcreate.sh`, `devcontainer-functions.sh`, or `project-setup.sh` |
+| No file conflicts | Entry must not contain files or directories that conflict with common assets (including subdirectories like `nix-family-os/`) |
 
 ### Common Validation Errors and Fixes
 
@@ -525,12 +534,21 @@ cdevcontainer catalog validate
 |-------|-----|
 | `Missing required directory: common/devcontainer-assets/` | Create the directory and add required common assets |
 | `Missing required common asset: .../<file>` | Add the missing file to `common/devcontainer-assets/` |
+| `Missing subdirectory: .../<subdir>` | Create the subdirectory (`nix-family-os/` or `wsl-family-os/`) in `common/devcontainer-assets/` |
+| `Missing required file in <subdir>: <file>` | Add the missing file to the subdirectory |
+| `<file> is not executable` | Run `chmod +x` on the shell script |
+| `Invalid JSON in root-project-assets: <file>` | Fix the JSON syntax in the file |
 | `Missing required file: catalog-entry.json` | Create `catalog-entry.json` in the entry directory |
 | `Missing required file: devcontainer.json` | Create `devcontainer.json` in the entry directory |
 | `Missing required file: VERSION` | Create a `VERSION` file containing a semver string (e.g., `1.0.0`) |
+| `VERSION must contain valid semver (X.Y.Z)` | Ensure VERSION contains only a semver string like `1.0.0` |
 | `'name' is required and must be a non-empty string` | Add the `name` field to `catalog-entry.json` |
 | `'name' must be lowercase, dash-separated, min 2 chars` | Rename to match pattern: lowercase, alphanumeric, hyphens only, min 2 chars |
 | `'description' is required and must be a non-empty string` | Add a meaningful `description` to `catalog-entry.json` |
+| `Unknown fields in catalog-entry.json: <fields>` | Remove unrecognized fields from `catalog-entry.json` |
+| `Directory name '<dir>' does not match entry name '<name>'` | Rename the directory to match the `name` field in `catalog-entry.json` |
+| `devcontainer.json must have a 'name' field` | Add a non-empty `name` field to `devcontainer.json` |
+| `devcontainer.json must have a container source` | Add `image`, `build`, `dockerFile`, or `dockerComposeFile` to `devcontainer.json` |
 | `Duplicate entry name '<name>'` | Change the `name` field to be unique across all entries |
 | `postCreateCommand must call .devcontainer/.devcontainer.postcreate.sh` | Update `devcontainer.json` to include the postcreate script reference |
 | `Entry contains '<file>' which conflicts with common/...` | Remove the conflicting file from the entry directory |
