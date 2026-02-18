@@ -49,6 +49,11 @@ caylent-devcontainer-catalog/
       .devcontainer.postcreate.sh       # Shared postcreate script (runs at container creation)
       devcontainer-functions.sh          # Shared bash functions used by postcreate and project-setup
       project-setup.sh                   # Template for project-specific setup commands
+    root-project-assets/                 # Optional: files copied to project root (not .devcontainer/)
+      CLAUDE.md                          # AI coding standards for Claude Code
+      .claude/                           # Claude Code configuration
+        settings.json
+        settings.local.json
   collections/
     default/
       catalog-entry.json                 # Collection metadata (name, description, tags)
@@ -70,6 +75,16 @@ Files in this directory are shared across all collections. When a collection is 
 | `.devcontainer.postcreate.sh` | Main setup script executed by `postCreateCommand`. Handles environment configuration, asdf tool installation, AWS SSO profile setup, git authentication, Claude Code CLI installation, and proxy validation. |
 | `devcontainer-functions.sh` | Shared bash functions (logging, WSL compatibility, proxy parsing/validation, git configuration, asdf plugin management, pipx installation). Used by the postcreate script and `project-setup.sh`. |
 | `project-setup.sh` | Template script for project-specific setup. Developers customize this file after initial setup to add project-level initialization commands (e.g., `make configure`, `npm install`, database seeds). |
+
+### Root Project Assets (`common/root-project-assets/`) — Optional
+
+If this directory exists, its contents are copied to the **project root** (not `.devcontainer/`) when a collection is applied. This distributes standardized root-level files to all projects.
+
+| File / Directory | Purpose |
+|------|---------|
+| `CLAUDE.md` | AI coding standards and project instructions for Claude Code. |
+| `.claude/settings.json` | Claude Code permission settings (allow/deny lists). |
+| `.claude/settings.local.json` | Local Claude Code settings overrides. |
 
 ### Collection Files
 
@@ -449,8 +464,9 @@ When `cdevcontainer setup-devcontainer` applies a collection to a project, files
 
 1. **Collection files copied first** -- All files from `collections/<name>/` are copied into the project's `.devcontainer/` directory.
 2. **Common assets copied second** -- All files from `common/devcontainer-assets/` are copied, overwriting any collection files with the same name.
-3. **`catalog-entry.json` augmented** -- The copied `catalog-entry.json` receives an additional `catalog_url` field recording which catalog URL was used.
-4. **Example files removed** -- `example-container-env-values.json` and `example-aws-profile-map.json` are deleted from the target if present.
+3. **Root project assets copied** -- If `common/root-project-assets/` exists, its contents are copied to the **project root** (e.g., `CLAUDE.md`, `.claude/`).
+4. **`catalog-entry.json` augmented** -- The copied `catalog-entry.json` receives an additional `catalog_url` field recording which catalog URL was used.
+5. **Example files removed** -- `example-container-env-values.json` and `example-aws-profile-map.json` are deleted from the target if present.
 
 This ordering ensures that common assets (postcreate script, shared functions, project-setup template) always come from the catalog's `common/` directory, providing consistency across all collections.
 
