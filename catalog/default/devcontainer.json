@@ -179,6 +179,8 @@
         "telemetry.telemetryLevel": "off",
         "remote.autoForwardPorts": false,
         "remote.autoForwardPortsSource": "process",
+        "remote.restoreForwardedPorts": false,
+        "remote.restoreForwardedPorts": false,
         "remote.otherPortsAttributes": {
           "onAutoForward": "ignore"
         }
