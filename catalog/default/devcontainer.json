@@ -176,17 +176,22 @@
         "chat.undoRequests.restoreInput": true,
         "inlineChat.finishOnType": true,
         "inlineChat.holdToSpeech": true,
+        "github.copilot.enable": {
+          "*": false
+        },
+        "github.copilot.editor.enableAutoCompletions": false,
+        "github.copilot.renameSuggestions.triggerAutomatically": false,
+        "chat.extensionUnification.enabled": false,
         "telemetry.telemetryLevel": "off",
         "remote.autoForwardPorts": false,
         "remote.autoForwardPortsSource": "process",
         "remote.restoreForwardedPorts": false,
-        "remote.restoreForwardedPorts": false,
         "remote.otherPortsAttributes": {
           "onAutoForward": "ignore"
         },
-          "remote.defaultExtensionsIfInstalledLocally": [
-            "GitHub.vscode-pull-request-github"
-          ]
+        "remote.defaultExtensionsIfInstalledLocally": [
+          "GitHub.vscode-pull-request-github"
+        ]
       }
     }
   },
