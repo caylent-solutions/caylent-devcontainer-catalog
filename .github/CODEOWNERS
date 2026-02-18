@@ -1,0 +1,7 @@
+# Code owners for all pull requests
+
+# Default owners for everything in the repo
+* @matt-dresden-caylent
+
+# GitHub Actions workflows
+/.github/workflows/ @matt-dresden-caylent
