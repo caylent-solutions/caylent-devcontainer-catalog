@@ -236,6 +236,12 @@ EOF
     helper = store
 EOF
 
+  # Rewrite SSH URLs to HTTPS so tools using SSH git URLs authenticate via token
+  cat <<EOF >> "${gitconfig}"
+[url "https://${git_provider_url}/"]
+    insteadOf = git@${git_provider_url}:
+EOF
+
   log_success "Git token authentication configured"
 }
 
@@ -284,6 +290,13 @@ Host ${git_provider_url}
     IdentitiesOnly yes
 EOF
   chmod 600 "${ssh_dir}/config"
+
+  # Rewrite HTTPS URLs to SSH so tools using HTTPS git URLs authenticate via SSH key
+  local gitconfig="/home/${container_user}/.gitconfig"
+  cat <<EOF >> "${gitconfig}"
+[url "git@${git_provider_url}:"]
+    insteadOf = https://${git_provider_url}/
+EOF
 
   # Fix ownership
   chown -R "${container_user}:${container_user}" "${ssh_dir}"
